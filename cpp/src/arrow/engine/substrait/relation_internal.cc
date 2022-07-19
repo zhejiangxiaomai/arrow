@@ -66,9 +66,11 @@ Result<compute::Declaration> FromProto(const substrait::Rel& rel,
 
       auto scan_options = std::make_shared<dataset::ScanOptions>();
 
-      if (read.has_filter()) {
-        ARROW_ASSIGN_OR_RAISE(scan_options->filter, FromProto(read.filter(), ext_set));
-      }
+      // FieldPath is not supported in scan filter. See ARROW-14658
+      // Ignore the filter in ReadRel and use the push-down filter from Filter operator.
+      // if (read.has_filter()) {
+      //   ARROW_ASSIGN_OR_RAISE(scan_options->filter, FromProto(read.filter(), ext_set));
+      // }
 
       if (read.has_projection()) {
         // NOTE: scan_options->projection is not used by the scanner and thus can't be
@@ -84,6 +86,16 @@ Result<compute::Declaration> FromProto(const substrait::Rel& rel,
       if (read.local_files().has_advanced_extension()) {
         return Status::NotImplemented(
             "substrait::ReadRel::LocalFiles::advanced_extension");
+      }
+
+      // Check whether the input is iterator.
+      auto head = read.local_files().items().at(0);
+      if (head.path_type_case() == substrait::ReadRel_LocalFiles_FileOrFiles::kUriFile &&
+          util::string_view{head.uri_file()}.starts_with("iterator:")) {
+        const auto& index = head.uri_file().substr(9);
+        // Construct decl with the index of input iterator.
+        return compute::Declaration{"source_index",
+                                    compute::SourceIndexOptions{std::stoi(index)}};
       }
 
       std::shared_ptr<dataset::FileFormat> format;
@@ -118,23 +130,22 @@ Result<compute::Declaration> FromProto(const substrait::Rel& rel,
         }
         auto path = item.uri_file().substr(7);
 
-        if (item.partition_index() != 0) {
-          return Status::NotImplemented(
-              "non-default substrait::ReadRel::LocalFiles::FileOrFiles::partition_index");
-        }
+        // Ignore partition index and use start and length to locate file fragment.
+        // if (item.partition_index() != 0) {
+        //   return Status::NotImplemented(
+        //       "non-default
+        //       substrait::ReadRel::LocalFiles::FileOrFiles::partition_index");
+        // }
 
-        if (item.start() != 0) {
-          return Status::NotImplemented(
-              "non-default substrait::ReadRel::LocalFiles::FileOrFiles::start offset");
-        }
+        // Read all row groups if both start and length are not specified.
+        int64_t start_offset = item.length() == 0 && item.start() == 0
+                                   ? -1
+                                   : static_cast<int64_t>(item.start());
+        int64_t length = static_cast<int64_t>(item.length());
 
-        if (item.length() != 0) {
-          return Status::NotImplemented(
-              "non-default substrait::ReadRel::LocalFiles::FileOrFiles::length");
-        }
-
-        ARROW_ASSIGN_OR_RAISE(auto fragment, format->MakeFragment(dataset::FileSource{
-                                                 std::move(path), filesystem}));
+        ARROW_ASSIGN_OR_RAISE(auto fragment,
+                              format->MakeFragment(dataset::FileSource{
+                                  std::move(path), filesystem, start_offset, length}));
         fragments.push_back(std::move(fragment));
       }
 
