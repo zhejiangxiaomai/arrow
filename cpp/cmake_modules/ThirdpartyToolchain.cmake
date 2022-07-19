@@ -1642,12 +1642,13 @@ macro(build_substrait)
   message("Building Substrait from source")
 
   set(SUBSTRAIT_PROTOS
-      algebra
       capabilities
+      expression
       extensions/extensions
       function
       parameterized_types
       plan
+      relations
       type
       type_expressions)
 
