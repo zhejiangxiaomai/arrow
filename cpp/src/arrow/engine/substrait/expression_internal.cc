@@ -167,9 +167,18 @@ Result<compute::Expression> FromProto(const substrait::Expression& expr,
 
       if (decoded_function.name.to_string() == "alias") {
         if (scalar_fn.args_size() != 1) {
-          return arrow::Status::Invalid("Alias should have exact 1 arg, but got " + std::to_string(scalar_fn.args_size()));
+          return arrow::Status::Invalid("Alias should have exact 1 arg, but got " +
+                                        std::to_string(scalar_fn.args_size()));
         }
         return FromProto(scalar_fn.args().at(0), ext_set);
+      }
+      if (decoded_function.name.to_string() == "is_in") {
+        const auto& in_list =
+            std::static_pointer_cast<ListScalar>(arguments[1].literal()->scalar());
+        auto value = in_list->value;
+        return compute::call(
+            "is_in", std::vector<arrow::compute::Expression>{std::move(arguments[0])},
+            arrow::compute::SetLookupOptions(*value));
       }
       return compute::call(decoded_function.name.to_string(), std::move(arguments));
     }
