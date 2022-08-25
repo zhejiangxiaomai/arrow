@@ -180,11 +180,12 @@ TEST(Substrait, SupportedExtensionTypes) {
     auto anchor = ext_set.num_types();
 
     EXPECT_THAT(ext_set.EncodeType(*expected_type), ResultWith(Eq(anchor)));
+     
     ASSERT_OK_AND_ASSIGN(
         auto buf,
         internal::SubstraitFromJSON(
-            "Type", "{\"user_defined_type_reference\": " + std::to_string(anchor) + "}"));
-
+            "Type", "{\"user_defined\": { \"type_reference\": " + std::to_string(anchor) +
+                        ", \"nullability\": \"NULLABILITY_NULLABLE\" } }"));
     ASSERT_OK_AND_ASSIGN(auto type, DeserializeType(*buf, ext_set));
     EXPECT_EQ(*type, *expected_type);
 
@@ -258,8 +259,9 @@ TEST(Substrait, NamedStruct) {
 }
 
 TEST(Substrait, NoEquivalentArrowType) {
-  ASSERT_OK_AND_ASSIGN(auto buf, internal::SubstraitFromJSON(
-                                     "Type", R"({"user_defined_type_reference": 99})"));
+  ASSERT_OK_AND_ASSIGN(
+    auto buf,
+    internal::SubstraitFromJSON("Type", R"({"user_defined": {"type_reference": 99}})"));
   ExtensionSet empty;
   ASSERT_THAT(
       DeserializeType(*buf, empty),
@@ -629,11 +631,11 @@ TEST(Substrait, ReadRel) {
         "items": [
           {
             "uri_file": "file:///tmp/dat1.parquet",
-            "format": "FILE_FORMAT_PARQUET"
+            "parquet": {}
           },
           {
             "uri_file": "file:///tmp/dat2.parquet",
-            "format": "FILE_FORMAT_PARQUET"
+            "parquet": {}
           }
         ]
       }
