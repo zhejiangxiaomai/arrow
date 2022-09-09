@@ -173,32 +173,27 @@ Result<compute::Expression> FromProto(const substrait::Expression& expr,
                 "only value arguments are currently supported for functions");
         }
       }
-    
-      if (decoded_function.name.to_string() == "alias") {
-        if (scalar_fn.arguments_size() != 1) {
-          return arrow::Status::Invalid("Alias should have exact 1 arg, but got " +
-                                        std::to_string(scalar_fn.arguments_size()));
-        }
-
-        const auto& argument = scalar_fn.arguments(0);
-        switch (argument.arg_type_case()) {
-          case substrait::FunctionArgument::kValue: {
-            return FromProto(argument.value(), ext_set);
-          }
-          default:
-            return Status::NotImplemented(
-                "only value arguments are currently supported for functions");
-        }
-      }
-      if (decoded_function.name.to_string() == "is_in") {
-        const auto& in_list =
-            std::static_pointer_cast<ListScalar>(arguments[1].literal()->scalar());
-        auto value = in_list->value;
-        return compute::call(
-            "is_in", std::vector<arrow::compute::Expression>{std::move(arguments[0])},
-            arrow::compute::SetLookupOptions(*value));
-      }
+      
       return compute::call(decoded_function.name.to_string(), std::move(arguments));
+    }
+
+    case substrait::Expression::kSingularOrList: {
+      const auto& singular_or_list = expr.singular_or_list();
+      auto options = singular_or_list.options();
+      if (options.size() == 0) {
+        return Status::NotImplemented("At least one option is needed.");
+      }
+      compute::Expression list;
+      // Only the first option is considered currently.
+      ARROW_ASSIGN_OR_RAISE(list, FromProto(options[0], ext_set));
+      const auto& in_list =
+            std::static_pointer_cast<ListScalar>(list.literal()->scalar());
+      auto listValue = in_list->value;
+      compute::Expression argument;
+      ARROW_ASSIGN_OR_RAISE(argument, FromProto(singular_or_list.value(), ext_set));
+      return compute::call(
+            "is_in", std::vector<arrow::compute::Expression>{std::move(argument)},
+            arrow::compute::SetLookupOptions(*listValue));
     }
 
     default:
