@@ -36,6 +36,7 @@ add_jar(arrow_dataset_java
         src/main/java/org/apache/arrow/dataset/file/JniWrapper.java
         src/main/java/org/apache/arrow/dataset/jni/NativeMemoryPool.java
         src/main/java/org/apache/arrow/dataset/jni/ReservationListener.java
+	src/main/java/org/apache/arrow/dataset/jni/NativeRecordBatchIterator.java
         GENERATE_NATIVE_HEADERS
         arrow_dataset_java-native
         DESTINATION
