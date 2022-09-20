@@ -180,12 +180,35 @@ Result<compute::Expression> FromProto(const substrait::Expression& expr,
     case substrait::Expression::kSingularOrList: {
       const auto& singular_or_list = expr.singular_or_list();
       auto options = singular_or_list.options();
-      if (options.size() == 0) {
-        return Status::NotImplemented("At least one option is needed.");
+      DCHECK(options.size() > 0);
+      // Convert literals to list.
+      std::shared_ptr<DataType> element_type;
+
+      ScalarVector values(options.size());
+      for (int i = 0; i < options.size(); ++i) {
+        if (!options[i].has_literal()) {
+          return Status::Invalid(
+              "Literal is expected as SingularOrList option.");
+        }
+        ARROW_ASSIGN_OR_RAISE(auto value, FromProto(options[i].literal(), ext_set));
+        DCHECK(value.is_scalar());
+        values[i] = value.scalar();
+        if (element_type) {
+          if (!value.type()->Equals(*element_type)) {
+            return Status::Invalid(
+                "Option type doesn't match the other values");
+          }
+        } else {
+          element_type = value.type();
+        }
       }
-      compute::Expression list;
-      // Only the first option is considered currently.
-      ARROW_ASSIGN_OR_RAISE(list, FromProto(options[0], ext_set));
+
+      ARROW_ASSIGN_OR_RAISE(auto builder, MakeBuilder(element_type));
+      RETURN_NOT_OK(builder->AppendScalars(values));
+      ARROW_ASSIGN_OR_RAISE(auto arr, builder->Finish());
+      auto datum = Datum(ListScalar(std::move(arr)));
+
+      compute::Expression list = compute::literal(std::move(datum));
       const auto& in_list =
             std::static_pointer_cast<ListScalar>(list.literal()->scalar());
       auto listValue = in_list->value;
